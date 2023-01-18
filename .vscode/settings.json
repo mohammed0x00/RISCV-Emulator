@@ -1,0 +1,9 @@
+{
+    "makefile.launchConfigurations": [
+        {
+            "cwd": "/home/mohammed/myriscv",
+            "binaryPath": "/home/mohammed/myriscv/prog",
+            "binaryArgs": []
+        }
+    ]
+}
