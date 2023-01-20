@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <termios.h>
+#include <unistd.h>
 #include <string.h>
 
 #include "instructions.h"
@@ -73,13 +75,6 @@ void Core_SingleCycle(riscv_core *core)
 
     if(core->wait_int) return;
 
-    static unsigned int counter = 0;
-    counter++;
-    if(counter == 6000001)
-    {
-       //printf("stop");
-    }
-
     if(core->pc & 0b11)
     {
         TRAP(EXCEPTION_INST_ADDR_MISALIGNED);
@@ -134,26 +129,6 @@ void Core_SingleCycle(riscv_core *core)
         }
     }
     core->x[0] = 0;
-
-
-
-    uint32_t myrd = (word >> 7) & 0x1f;
-/*
-
-    if(counter == 10000000) {exit(0);}
-    if(counter >= 1)
-    {
-        if(myrd <= 31)
-        {
-            if(instruction->opcode == INST_B_TYPE_OPCODE || instruction->opcode == INST_J_TYPE_OPCODE_JAL || instruction->opcode == INST_I_TYPE_OPCODE_JALR || (instruction->opcode == INST_CSR_INT_OPCODE && ((I_type_t *)instruction)->funct3 == INST_CSR_FUNCT3_INT && ((I_type_t *)instruction)->imm ==INST_INT_IMM_MRET ))
-                printf("%u 0x%08x -> 0x%08x  word=0x%08x\n",counter, oldpc, core->x[myrd], word);
-            else
-                printf("%u 0x%08x -> 0x%08x  word=0x%08x\n",counter, core-> pc, core->x[myrd], word);
-        }
-        else
-            printf("%u 0x%08x\n",counter, core-> pc);
-    }
-*/
 
     if(core->mip & (1<<7))
     {

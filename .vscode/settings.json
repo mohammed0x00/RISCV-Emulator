@@ -2,8 +2,12 @@
     "makefile.launchConfigurations": [
         {
             "cwd": "/home/mohammed/myriscv",
-            "binaryPath": "/home/mohammed/myriscv/prog",
+            "binaryPath": "/home/mohammed/myriscv/riscv-emulator",
             "binaryArgs": []
         }
-    ]
+    ],
+    "files.associations": {
+        "sched.h": "c",
+        "core.h": "c"
+    }
 }

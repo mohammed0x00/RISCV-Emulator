@@ -2,6 +2,8 @@
 #include <stdint.h>
 #include <pthread.h>
 #include <unistd.h>
+#include <termios.h>
+#include <sys/ioctl.h>
 #include <sched.h>
 #include "core.h"
 #define RAM_SIZE    64*1024*1024
@@ -12,11 +14,16 @@ riscv_core mycore;
 uint8_t memory_write(uint32_t address, uint32_t data, uint8_t type, uint8_t bytes_num);
 uint8_t memory_read(uint32_t address, uint8_t type, uint32_t * dest, uint8_t bytes_num);
 void *timer_signal_thread(void *arg);
+void *uart_thread(void *arg);
+void terminal_init(void);
+int stdin_has_char(void);
+char stdin_read_char(void);
 
 
 int main(void)
 {
-    pthread_t thread;
+    pthread_t timer;
+    pthread_t uart;
     struct sched_param param;
     param.sched_priority = sched_get_priority_max(SCHED_FIFO);
     pthread_attr_t attr;
@@ -24,9 +31,11 @@ int main(void)
     pthread_attr_setschedpolicy(&attr, SCHED_FIFO);
     pthread_attr_setschedparam(&attr, &param);
     
-    //pthread_create(&thread, &attr, timer_signal_thread, NULL);
+    //pthread_create(&timer, &attr, timer_signal_thread, NULL);
+    
+    terminal_init();
 
-    FILE *in=fopen("Image2","r");
+    FILE *in=fopen("./linux/Image","r");
     fseek( in, 0, SEEK_END );
 	long flen = ftell( in );
 	fseek( in, 0, SEEK_SET );
@@ -37,7 +46,7 @@ int main(void)
     }
 	fclose(in);
 
-    FILE *in2=fopen("./minimal.dtb","r");
+    FILE *in2=fopen("./linux/devicetree.dtb","r");
     fseek( in2, 0, SEEK_END );
 	flen = ftell( in2 );
 	fseek( in2, 0, SEEK_SET );
@@ -60,23 +69,29 @@ int main(void)
         if(i>= 100){mycore.time++;i=0;}
         Core_SingleCycle(&mycore);
     }
-    pthread_join(thread, NULL);
+    return 0;
 }
 
 uint8_t memory_write(uint32_t address, uint32_t data, uint8_t type, uint8_t bytes_num)
 {
-    if (address >= 0x10000000 && address < 0x12000000)
+    if (address >= 0x30000000 && address < 0x32000000)
     {
-        if(address==0x10000000)
+        if(address == 0x40000000)
+        {
+            printf("LEDS:");
+            for(int i=0; i<8;i++) printf("%d - ", (data >> i) & 1);
+            printf("\n");
+        }
+        else if(address==0x30000000)
         {
             printf("%c", (uint8_t)data);
             fflush(stdout);
         }
-        else if(address == 0x11004004)
+        else if(address == 0x31004004)
         {
             *((uint32_t *)((&mycore.timercmp)+4)) = data;
         }
-        else if(address == 0x11004000)
+        else if(address == 0x31004000)
         {
             *((uint32_t *)(&mycore.timercmp)) = data;
         }
@@ -104,17 +119,19 @@ uint8_t memory_write(uint32_t address, uint32_t data, uint8_t type, uint8_t byte
 
 uint8_t memory_read(uint32_t address, uint8_t type, uint32_t * dest, uint8_t bytes_num)
 {
-    if (address >= 0x1000000 && address < 0x12000000)
+    if (address >= 0x3000000 && address < 0x32000000)
     {
-        if(address == 0x10000000)
+        if(address == 0x30000000)
         {
-            *dest = 0;
+            *dest = stdin_read_char();
         }
-        else if( address == 0x10000005 )
-		    *dest = 0x60;
-        else if(address == 0x1100bff8)
+        else if( address == 0x30000005 )
+		{
+            *dest = 0x60 | stdin_has_char();
+        }
+        else if(address == 0x3100bff8)
             *dest = (uint32_t)mycore.time;
-        else if(address == 0x1100bffc)
+        else if(address == 0x3100bffc)
             *dest = (uint32_t)(mycore.time >> 32);
         else
             *dest = 0;
@@ -135,4 +152,34 @@ void *timer_signal_thread(void *arg) {
         usleep(20);
     }
     return NULL;
+}
+
+void terminal_init(void)
+{
+    struct termios tty;
+    tcgetattr(STDIN_FILENO, &tty);
+    tty.c_lflag &= ~(ICANON | ECHO);
+    tcsetattr(STDIN_FILENO, TCSANOW, &tty);
+}
+
+int stdin_has_char(void) {
+    int bytes_waiting;
+    ioctl(STDIN_FILENO, FIONREAD, &bytes_waiting);
+    if(bytes_waiting > 0)
+        return 1;
+    else
+        return 0;
+}
+
+char stdin_read_char(void)
+{
+    char c;
+    if(read(STDIN_FILENO, &c, 1) > 0)
+    {
+        return c;  
+    }
+    else
+    {
+        return -1;
+    }
 }

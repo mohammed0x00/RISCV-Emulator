@@ -1,4 +1,4 @@
-TARGET = prog
+TARGET = riscv-emulator
 LIBS = -lm
 CC = gcc
 CFLAGS = -g -Wall
