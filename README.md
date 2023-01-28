@@ -7,6 +7,8 @@ RISC-V emulator that is capable of running no-mmu linux.
 
 > [LEDs Simulation Video]
 
+>[LEDS & Switches Simulation Video]
+
 ## Getting started
 - Download project files
 ```console
@@ -46,4 +48,4 @@ make
 [RISC-V International]: <https://riscv.org>
 [Youtube Video]: <https://youtu.be/urlDbGcUlYs>
 [LEDs Simulation Video]: <https://youtu.be/-AoaOPdKg2o>
-
+[LEDS & Switches Simulation Video]: <https://youtu.be/zTyv_APaXqU>
