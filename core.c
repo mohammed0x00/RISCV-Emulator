@@ -61,7 +61,6 @@ void Core_SingleCycle(riscv_core *core)
     Uninitialized_type_t * instruction = (Uninitialized_type_t *)(&word);
     core->cycle++;
     //core->time++;
-    uint32_t oldpc = core->pc;
 
     if(core->time >= core->timercmp)
     {
@@ -130,6 +129,7 @@ void Core_SingleCycle(riscv_core *core)
     }
     core->x[0] = 0;
 
+
     if(core->mip & (1<<7))
     {
         if(!core->trap)
@@ -153,6 +153,7 @@ void Core_SingleCycle(riscv_core *core)
         }
         else
         {
+
             uint8_t rd = ((I_type_t *)instruction)->rd;
             core->mtval = ((core->mcause+1 > 5) && (core->mcause+1 <=8))? core->x[rd]:core->pc;
         }
@@ -583,6 +584,7 @@ static uint8_t Execute_Atomic(riscv_core *core, Atomic_type_t *inst)
     uint32_t rs1_val = core->x[inst->rs1];
     uint32_t rs2_val = core->x[inst->rs2];
     uint32_t rd_val=0;
+
 
     if(core->operations.mem_read(rs1_val, ACCESS_DATA, &rd_val, WORD) == ACCESS_REVOKED)
     {

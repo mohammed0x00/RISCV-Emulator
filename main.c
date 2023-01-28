@@ -2,28 +2,63 @@
 #include <stdint.h>
 #include <pthread.h>
 #include <unistd.h>
+#include <stdlib.h>
 #include <termios.h>
 #include <sys/ioctl.h>
 #include <sched.h>
+#include <spawn.h>
+#include <sys/wait.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <signal.h>
+
 #include "core.h"
-#define RAM_SIZE    64*1024*1024
+#define RAM_SIZE    128*1024*1024
 #define RAM_BASE    0x80000000
 uint8_t ram[RAM_SIZE];
 riscv_core mycore;
+extern char **environ;
+char* shared_memory;
+int shmid;
+pid_t receiver_pid;
 
 uint8_t memory_write(uint32_t address, uint32_t data, uint8_t type, uint8_t bytes_num);
 uint8_t memory_read(uint32_t address, uint8_t type, uint32_t * dest, uint8_t bytes_num);
+void *interface_thread(void *arg);
 void *timer_signal_thread(void *arg);
-void *uart_thread(void *arg);
+void run_interface_application(void);
 void terminal_init(void);
 int stdin_has_char(void);
 char stdin_read_char(void);
+void sigterm_handler(int signum);
 
 
 int main(void)
 {
-    pthread_t timer;
-    pthread_t uart;
+    signal(SIGINT, sigterm_handler);
+    signal(SIGTERM, sigterm_handler);
+
+    key_t key = 0xDEADBEEF;
+    size_t size = 4096;
+    int shmflg = IPC_CREAT | 0666;
+
+    // create the shared memory segment
+    shmid = shmget(key, size, shmflg);
+    if (shmid == -1) {
+        perror("Error creating shared memory segment");
+        return 1;
+    }
+
+    // attach the shared memory segment to the process's address space
+    shared_memory = shmat(shmid, NULL, 0);
+    if (shared_memory == (char *) -1) {
+        perror("Error attaching shared memory segment");
+        shmctl(shmid, IPC_RMID, NULL);
+        return 1;
+    }
+
+    pthread_t interface;
+    //pthread_t timer;
     struct sched_param param;
     param.sched_priority = sched_get_priority_max(SCHED_FIFO);
     pthread_attr_t attr;
@@ -32,6 +67,7 @@ int main(void)
     pthread_attr_setschedparam(&attr, &param);
     
     //pthread_create(&timer, &attr, timer_signal_thread, NULL);
+    pthread_create(&interface, NULL, interface_thread, NULL);
     
     terminal_init();
 
@@ -66,7 +102,7 @@ int main(void)
     mycore.pc = RAM_BASE;
     for(int i=0;;i++)
     {
-        if(i>= 100){mycore.time++;i=0;}
+        if(i>= 300){mycore.time++;i=0;}
         Core_SingleCycle(&mycore);
     }
     return 0;
@@ -76,13 +112,7 @@ uint8_t memory_write(uint32_t address, uint32_t data, uint8_t type, uint8_t byte
 {
     if (address >= 0x30000000 && address < 0x32000000)
     {
-        if(address == 0x40000000)
-        {
-            printf("LEDS:");
-            for(int i=0; i<8;i++) printf("%d - ", (data >> i) & 1);
-            printf("\n");
-        }
-        else if(address==0x30000000)
+        if(address==0x30000000)
         {
             printf("%c", (uint8_t)data);
             fflush(stdout);
@@ -95,6 +125,13 @@ uint8_t memory_write(uint32_t address, uint32_t data, uint8_t type, uint8_t byte
         {
             *((uint32_t *)(&mycore.timercmp)) = data;
         }
+        return ACCESS_GRANTED;
+    }
+    else if((address >= 0x40000000) && (address < 0x4000000F))
+    {
+        address -= 0x40000000;
+        shared_memory[address] = (uint8_t) data;
+        kill(receiver_pid, SIGUSR1);
         return ACCESS_GRANTED;
     }
     else if(address >= RAM_BASE && address < RAM_BASE + RAM_SIZE)
@@ -125,7 +162,7 @@ uint8_t memory_read(uint32_t address, uint8_t type, uint32_t * dest, uint8_t byt
         {
             *dest = stdin_read_char();
         }
-        else if( address == 0x30000005 )
+        else if(address == 0x30000005)
 		{
             *dest = 0x60 | stdin_has_char();
         }
@@ -137,6 +174,12 @@ uint8_t memory_read(uint32_t address, uint8_t type, uint32_t * dest, uint8_t byt
             *dest = 0;
         return ACCESS_GRANTED;
     }
+    else if((address >= 0x40000000) && (address < 0x4000000F))
+    {
+        address -= 0x40000000;
+        *dest = shared_memory[address];
+        return ACCESS_GRANTED;
+    }
     if(address >= RAM_BASE && address < RAM_BASE + RAM_SIZE)
     {
         address -= RAM_BASE;
@@ -144,6 +187,12 @@ uint8_t memory_read(uint32_t address, uint8_t type, uint32_t * dest, uint8_t byt
         return ACCESS_GRANTED;
     }
     return ACCESS_REVOKED;
+}
+
+void *interface_thread(void *arg) {
+    run_interface_application();
+    sigterm_handler(0);
+    return NULL;
 }
 
 void *timer_signal_thread(void *arg) {
@@ -183,3 +232,31 @@ char stdin_read_char(void)
         return -1;
     }
 }
+
+void run_interface_application(void) {
+    // create a new process and execute the application
+    const char* path = "./Interface/Interface";
+    char* const argv[8] = {};
+    pid_t pid;
+    int status;
+
+    /* Create a new process */
+    if (posix_spawn(&pid, path, NULL, NULL, argv, environ) != 0) {
+        perror("posix_spawn");
+        return;
+    }
+
+    receiver_pid = pid;
+    /* Wait for the child process to complete */
+    if (waitpid(pid, &status, 0) == -1) {
+        perror("waitpid");
+        return;
+    }
+}
+
+void sigterm_handler(int signum)
+{
+    shmctl(shmid, IPC_RMID, 0);
+    exit(0);
+}
+
